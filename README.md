@@ -32,6 +32,5 @@ Currently focused on 2002–2007, with work in progress to overlap datasets and 
 
 ---
 
-## Technologies Used
-
-- Python
+## Data 
+I had some issues with uploading the data so I uploaded those into a file in our google drive if you download the full folder path into "data folder" this code should run. 
