@@ -69,7 +69,7 @@ def run_t_tests(df_name, df, flag_cols, metrics, label_prefix=''):
                     print(f"  Mean (flag=0): {group0.mean():.2f}")
                     print(f"  T-stat: {t_stat:.3f}, P-value: {p_val:.4f}\n")
 
-                    if p_val < 0.05:
+                    if p_val < 0.05 and abs(t_stat)>2:
                         significant_results.append({
                             'dataset': df_name,
                             'flag': flag,
@@ -92,5 +92,5 @@ run_t_tests('Player Level Data',merged_player_data, flag_columns_player, all_met
 signif_df = pd.DataFrame(significant_results)
 
 # Display or save
-print("\n===== SIGNIFICANT RESULTS (p < 0.05) =====")
+print("\n===== SIGNIFICANT RESULTS (p < 0.05) and (|t|>2)=====")
 print(signif_df)
