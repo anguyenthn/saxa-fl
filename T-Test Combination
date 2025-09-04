@@ -10,9 +10,27 @@ from scipy.stats import ttest_ind
 team_week = pd.read_csv('data/team_week_aggregate.csv')
 merged_player_data = pd.read_csv('data/df_merged_final.csv')
 
+# # Convert column names to sets
+# cols_df1 = set(team_week.columns)
+# cols_df2 = set(merged_player_data.columns)
+
+# # Columns in both DataFrames
+# common_cols = cols_df1 & cols_df2
+
+# # Columns only in df1
+# only_in_df1 = cols_df1 - cols_df2
+
+# # Columns only in df2
+# only_in_df2 = cols_df2 - cols_df1
+
+# # Print results
+# print("Common columns:", common_cols)
+# print("Only in df1:", only_in_df1)
+# print("Only in df2:", only_in_df2)
+
 significant_results = []
 
-# Position Stats Found in Kesh's RF Model Code 
+# Position Stats Found in Kesh's RF
 pass_stats = ["attempts", "completions", "passing_yards", "passing_tds", "interceptions",
               "sacks", "sack_yards", "sack_fumbles", "sack_fumbles_lost",
               "passing_air_yards", "passing_yards_after_catch",
@@ -26,13 +44,17 @@ rec_stats = ['receptions', 'targets', 'receiving_yards', 'receiving_tds', 'recei
              'receiving_first_downs', 'receiving_2pt_conversions', 'racr', 'target_share', 
              'air_yards_share', 'wopr']
 
-all_metrics = pass_stats + rush_stats + rec_stats
+game_only=['point_diff','team_rest_days','points_scored','week_after_international']
+player_only=['extended_away_games','travel_distance_away','lead_changes','week_after_intl']
+# Combine all stats
+all_metrics_game = pass_stats + rush_stats + rec_stats+ game_only
+all_metrics_player=pass_stats + rush_stats + rec_stats+ player_only
 
-# Flag column
-flag_columns= ['isaway', 'is_thursday','is_international']  
+# Define flag columns you want to test against
+flag_columns_game= ['isaway', 'is_thursday','is_international','point_diff']  
+flag_columns_player=['isaway', 'is_thursday','is_international','lead_changes']
 
-
-# T-Test Function (wanted to only look at significant ones in the df) 
+# T-Test Function 
 def run_t_tests(df_name, df, flag_cols, metrics, label_prefix=''):
     for flag in flag_cols:
         for metric in metrics:
@@ -47,7 +69,7 @@ def run_t_tests(df_name, df, flag_cols, metrics, label_prefix=''):
                     print(f"  Mean (flag=0): {group0.mean():.2f}")
                     print(f"  T-stat: {t_stat:.3f}, P-value: {p_val:.4f}\n")
 
-                    if p_val < 0.05: # creates a dataframe to look at the significant values
+                    if p_val < 0.05:
                         significant_results.append({
                             'dataset': df_name,
                             'flag': flag,
@@ -60,10 +82,10 @@ def run_t_tests(df_name, df, flag_cols, metrics, label_prefix=''):
 
 # Run tests on both datasets
 print("===== TEAM-WEEK DATASET =====")
-run_t_tests('Game Level Data',team_week, flag_columns, all_metrics, label_prefix='TeamWeek: ')
+run_t_tests('Game Level Data',team_week, flag_columns_game, all_metrics_game, label_prefix='TeamWeek: ')
 
 print("\n===== PLAYER-LEVEL DATASET =====")
-run_t_tests('Player Level Data',merged_player_data, flag_columns, all_metrics, label_prefix='PlayerData: ')
+run_t_tests('Player Level Data',merged_player_data, flag_columns_player, all_metrics_player, label_prefix='PlayerData: ')
 
 
 # Convert significant results to DataFrame
@@ -72,6 +94,3 @@ signif_df = pd.DataFrame(significant_results)
 # Display or save
 print("\n===== SIGNIFICANT RESULTS (p < 0.05) =====")
 print(signif_df)
-
-
-# Scatter Plot (Will add these later tomorrow) 
