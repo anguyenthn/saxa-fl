@@ -13,7 +13,7 @@ import pandas as pd
 
 # Load the weekly player-level dataset
 # This file has one row per player per game, so we need to roll it up to the team level
-df = pd.read_csv("weekly_data_public.csv")
+df = pd.read_csv("df_merged.csv")
 
 # Make sure there is a "team" column for grouping
 # If not present, use "recent_team" which indicates the player's current team
@@ -115,72 +115,165 @@ else:
 
 group_keys = ["season", "week", "team"]
 
+# 1) Sums: true "volume" stats that should add across players
 sum_cols = [
-    "attempts","completions","passing_yards","passing_tds",
-    "carries","rushing_yards","rushing_tds","rushing_first_downs",
-    "rushing_fumbles","rushing_fumbles_lost",
-    "receptions","targets","receiving_yards","receiving_tds","receiving_first_downs",
-    "receiving_fumbles","receiving_fumbles_lost",
-    "passing_air_yards","passing_yards_after_catch",
+    # passing
+    "attempts","completions","passing_yards","passing_tds","interceptions",
+    "passing_air_yards","passing_yards_after_catch","passing_first_downs","passing_2pt_conversions",
+    # rushing
+    "carries","rushing_yards","rushing_tds","rushing_fumbles","rushing_fumbles_lost","rushing_first_downs",
+    # receiving
+    "receptions","targets","receiving_yards","receiving_tds",
+    "receiving_fumbles","receiving_fumbles_lost","receiving_first_downs","receiving_2pt_conversions",
     "receiving_air_yards","receiving_yards_after_catch",
+    # sacks / turnovers (player-level)
     "sacks","sack_yards","sack_fumbles","sack_fumbles_lost",
-    "interceptions",
+    # split stats we created
     "ints_thrown","ints_def","sacks_taken","sacks_made","sack_yards_taken","qb_sack_fumbles_lost",
+    # additional player-level volumes you listed
+    "offensive_snaps","defensive_snaps","special_team_snaps",
+    "air_yards_completion","air_yards_incompletion","yards_after_catch",
 ]
 
+# 2) Means: rate/efficiency shares (averaged across players)
 mean_cols = ["racr","wopr","target_share","air_yards_share"]
 
+# 3) First: game constants (identical for all rows of a team-week; using 'first' avoids double-count)
 first_cols = [
-    "home_team","away_team","home_score","away_score","result",
-    "stadium_id","surface","roof","temp","wind","away_rest","home_rest","div_game","weekday"
+    # opponents / identities / scheduling
+    "season_type","opponent_team","game_type","game_id","old_game_id","gsis",
+    "gameday","gametime","weekday",
+    # venue & context
+    "location","stadium_id","stadium","surface","roof","temp","wind",
+    # scoring & result (game-level)
+    "home_team","away_team","home_score","away_score","result","total","overtime",
+    # rest / division / travel
+    "away_rest","home_rest","div_game","travel_distance_away",
+    # team totals often repeated per player-row; keep one copy
+    "team_offensive_snaps","team_defensive_snaps","team_special_team_snaps",
+    # other game-level metric that should not be summed
+    "lead_changes",
 ]
 
-binary_max_cols = ["isaway","is_thursday","is_international","week_after_international","intl"]
+# 4) Max: binary flags and “ever true” indicators
+binary_max_cols = [
+    "isaway","is_thursday","is_international","week_after_international","intl",
+    "extended_away_games",  # if present, treat as a flag
+]
 
-# Only keep the columns that actually exist in the dataset
-sum_cols = [c for c in sum_cols if c in df.columns]
-mean_cols = [c for c in mean_cols if c in df.columns]
-first_cols = [c for c in first_cols if c in df.columns]
+# Keep only columns that exist
+sum_cols        = [c for c in sum_cols if c in df.columns]
+mean_cols       = [c for c in mean_cols if c in df.columns]
+first_cols      = [c for c in first_cols if c in df.columns]
 binary_max_cols = [c for c in binary_max_cols if c in df.columns]
 
-# Build the aggregation dictionary
-agg_dict = {**{c: "sum" for c in sum_cols},
-            **{c: "mean" for c in mean_cols},
+# Build aggregation dict
+agg_dict = {**{c: "sum"   for c in sum_cols},
+            **{c: "mean"  for c in mean_cols},
             **{c: "first" for c in first_cols},
-            **{c: "max" for c in binary_max_cols}}
+            **{c: "max"   for c in binary_max_cols}}
 
-# Create one row per team per week
+# Group → one row per (season, week, team)
 team_week = df.groupby(group_keys, as_index=False).agg(agg_dict)
 
-# After aggregation, compute performance outcomes at the team level
-# Points scored: home_score if team was home, else away_score
+# --- Post-aggregation derived fields (unchanged from before, but robust to missing cols) ---
+
 def _points_scored(row):
-    if "home_team" in team_week.columns and "home_score" in team_week.columns:
-        return row["home_score"] if row["team"] == row["home_team"] else row.get("away_score", pd.NA)
+    if {"home_team","home_score","away_score"}.issubset(team_week.columns):
+        return row["home_score"] if row["team"] == row["home_team"] else row["away_score"]
     return pd.NA
 
-# Points allowed: opponent’s score
 def _points_allowed(row):
     if {"home_team","home_score","away_score"}.issubset(team_week.columns):
         return row["away_score"] if row["team"] == row["home_team"] else row["home_score"]
     return pd.NA
 
-team_week["points_scored"] = team_week.apply(_points_scored, axis=1)
+team_week["points_scored"]  = team_week.apply(_points_scored, axis=1)
 team_week["points_allowed"] = team_week.apply(_points_allowed, axis=1)
 
-# Point differential (performance measure) and win flag
 team_week["point_diff"] = team_week["points_scored"] - team_week["points_allowed"]
-team_week["win"] = (team_week["point_diff"] > 0).astype(int)
+team_week["win"] = (team_week["point_diff"] > 0).astype("Int64")
 
-# Rest days for this team in this game
 def _team_rest(row):
-    if "home_rest" in team_week.columns and "away_rest" in team_week.columns:
+    if {"home_rest","away_rest","home_team"}.issubset(team_week.columns):
         return row["home_rest"] if row["team"] == row["home_team"] else row["away_rest"]
     return pd.NA
 
 team_week["team_rest_days"] = team_week.apply(_team_rest, axis=1)
 
 # Save the final aggregated dataset
-# team_week.to_csv("team_week_aggregate.csv", index=False)
+team_week.to_csv("merged_week_aggregate.csv", index=False)
 
 print(team_week.head())
+
+# Count columns in original player-level DataFrame
+print("Old df column count:", len(df.columns))
+
+# Count columns in new team-week DataFrame
+print("New df column count:", len(team_week.columns))
+
+# If you want to see the actual column names too:
+print("\nOld df columns:", df.columns.tolist())
+print("\nNew df columns:", team_week.columns.tolist())
+
+# Audit which columns were dropped
+
+old_cols = set([
+    'player_id','player_display_name','position_group','recent_team','season','week','season_type',
+    'opponent_team','attempts','completions','passing_yards','passing_tds','interceptions','sacks',
+    'sack_yards','sack_fumbles','sack_fumbles_lost','passing_air_yards','passing_yards_after_catch',
+    'passing_first_downs','passing_2pt_conversions','carries','rushing_yards','rushing_tds',
+    'rushing_fumbles','rushing_fumbles_lost','rushing_first_downs','receptions','targets',
+    'receiving_yards','receiving_tds','receiving_fumbles','receiving_fumbles_lost','receiving_air_yards',
+    'receiving_yards_after_catch','receiving_first_downs','receiving_2pt_conversions','racr','target_share',
+    'air_yards_share','wopr','team','depth_chart_position','jersey_number','football_name','status',
+    'status_description_abbr','game_type','player_name','position','gameday','weekday','gametime','location',
+    'stadium_id','stadium','away_team','away_score','home_team','home_score','result','total','overtime',
+    'old_game_id','gsis','away_rest','home_rest','div_game','roof','surface','temp','wind','isaway',
+    'is_international','player_name_flat','extended_away_games','week_after_intl','intl','is_thursday',
+    'game_id','offensive_snaps','team_offensive_snaps','defensive_snaps','team_defensive_snaps',
+    'special_team_snaps','team_special_team_snaps','lead_changes','travel_distance_away',
+    'air_yards_completion','air_yards_incompletion','yards_after_catch','is_international_tw',
+    'week_after_international','ints_thrown','ints_def','sacks_taken','sacks_made','sack_yards_taken',
+    'qb_sack_fumbles_lost'
+])
+
+new_cols = set([
+    'season','week','team','attempts','completions','passing_yards','passing_tds','interceptions',
+    'passing_air_yards','passing_yards_after_catch','passing_first_downs','passing_2pt_conversions','carries',
+    'rushing_yards','rushing_tds','rushing_fumbles','rushing_fumbles_lost','rushing_first_downs','receptions',
+    'targets','receiving_yards','receiving_tds','receiving_fumbles','receiving_fumbles_lost','receiving_first_downs',
+    'receiving_2pt_conversions','receiving_air_yards','receiving_yards_after_catch','sacks','sack_yards',
+    'sack_fumbles','sack_fumbles_lost','ints_thrown','ints_def','sacks_taken','sacks_made','sack_yards_taken',
+    'qb_sack_fumbles_lost','offensive_snaps','defensive_snaps','special_team_snaps','air_yards_completion',
+    'air_yards_incompletion','yards_after_catch','racr','wopr','target_share','air_yards_share','season_type',
+    'opponent_team','game_type','game_id','old_game_id','gsis','gameday','gametime','weekday','location',
+    'stadium_id','stadium','surface','roof','temp','wind','home_team','away_team','home_score','away_score',
+    'result','total','overtime','away_rest','home_rest','div_game','travel_distance_away','team_offensive_snaps',
+    'team_defensive_snaps','team_special_team_snaps','lead_changes','isaway','is_thursday','is_international',
+    'week_after_international','intl','extended_away_games','points_scored','points_allowed','point_diff','win',
+    'team_rest_days'
+])
+
+kept     = sorted(old_cols & new_cols)
+dropped  = sorted(old_cols - new_cols)
+added    = sorted(new_cols - old_cols)
+
+print(f"Kept ({len(kept)}):", kept[:20], " ...")
+print(f"Dropped ({len(dropped)}):", dropped)  # inspect all, usually player-ID fields
+print(f"Added ({len(added)}):", added)
+
+
+"""
+We dropped:
+    
+    player_id, player_display_name, player_name, player_name_flat, position, position_group,
+    depth_chart_position, jersey_number, football_name, status, status_description_abbr
+
+    plus the helper alias week_after_intl and the 
+    intermediate is_international_tw 
+    (we collapsed these into week_after_international and intl). 
+
+That’s expected for a team-week table.
+
+"""
