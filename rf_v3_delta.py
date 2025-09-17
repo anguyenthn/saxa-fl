@@ -41,6 +41,14 @@ df_analysis = (
     df_merged
       .loc[df_merged["position_group"].isin(["QB", "RB", "FB", "WR", "TE"])]
       .assign(
+          
+          travel_distance = lambda d: np.where((d["isaway"] == 0) & (d["intl"] == 1), d["travel_distance_home"],    # Player Specific Travel Distance
+                                               np.where(d["isaway"] == 1, d["travel_distance_away"], 0)                              
+                                               ),
+          
+          rest_days = lambda d: np.where(d["isaway"] == 0, d["away_rest"], d["home_rest"]),                       # Player Specific Rest Days
+
+          
           snap_share = lambda d: d["offensive_snaps"].div(d["team_offensive_snaps"]),                              # On-Field %
           
           pass_usage = lambda d: d["attempts"].div(d["offensive_snaps"]),                                          # Passing Play Usage 
@@ -76,7 +84,8 @@ df_cols_to_drop = [
     "sack_fumbles_lost", "passing_first_downs", "passing_2pt_conversions", 
     "rushing_first_downs", "rushing_fumbles_lost", 
     "receiving_fumbles_lost", "receiving_first_downs", "receiving_2pt_conversions", "yards_after_catch",
-    "player_name_flat"
+    "player_name_flat",
+    "travel_distance_home", "travel_distance_away"
     ]
 
 
@@ -104,12 +113,12 @@ columns_in_order = [
     "racr", "target_share", "air_yards_share", "wopr", 
     "away_team", "away_score", "home_team", "home_score", "result", "total", 
     "overtime", "div_game", "isaway", "extended_away_games", "intl", "is_thursday",
-    "lead_changes", "travel_distance_away"
+    "lead_changes", "rest_days", "travel_distance"
 ]
 
 data_analysis = data_analysis[columns_in_order]
 
-# data_analysis.to_csv('data_analysis.csv', index=False)
+data_analysis.to_csv('data_analysis.csv', index=False)
 
 
 ### Finding Player Season Average to compare
@@ -256,8 +265,8 @@ pass_drop_columns = [
     "racr", "target_share", "air_yards_share", "wopr", 
     "away_team", "away_score", "home_team", "home_score", 
     "result", "total", 
-    # "overtime", "div_game", "isaway", "extended_away_games", "intl", "is_thursday",
-    "lead_changes", "travel_distance_away",
+    # "overtime", "div_game", "isaway", "extended_away_games", "intl", "is_thursday", 
+    "lead_changes", 
     # "attempts_delta", "completions_delta", "passing_yards_delta",
     # "passing_tds_delta", "interceptions_delta", "sacks_delta", "sack_yards_delta",
     # "sack_fumbles_delta", "passing_air_yards_delta", "passing_yards_after_catch_delta", 
@@ -290,7 +299,7 @@ rush_drop_columns = [
     "away_team", "away_score", "home_team", "home_score", 
     "result", "total", 
     # "overtime", "div_game", "isaway", "extended_away_games", "intl", "is_thursday",
-    "lead_changes", "travel_distance_away",
+    "lead_changes", 
     "attempts_delta", "completions_delta", "passing_yards_delta",
     "passing_tds_delta", "interceptions_delta", "sacks_delta", "sack_yards_delta",
     "sack_fumbles_delta", "passing_air_yards_delta", "passing_yards_after_catch_delta", 
@@ -323,7 +332,7 @@ rec_drop_columns = [
     "away_team", "away_score", "home_team", "home_score", 
     "result", "total", 
     # "overtime", "div_game", "isaway", "extended_away_games", "intl", "is_thursday",
-    "lead_changes", "travel_distance_away",
+    "lead_changes", 
     "attempts_delta", "completions_delta", "passing_yards_delta",
     "passing_tds_delta", "interceptions_delta", "sacks_delta", "sack_yards_delta",
     "sack_fumbles_delta", "passing_air_yards_delta", "passing_yards_after_catch_delta", 
